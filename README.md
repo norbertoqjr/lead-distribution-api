@@ -1,6 +1,6 @@
 # Lead Distribution Platform — API
 
-Express + TypeScript backend for the lead distribution platform. Owns the database, authentication, the single lead form and distribution, broker eligibility, and the lead assignment algorithm.
+NestJS + TypeScript backend for the lead distribution platform. Owns the database, authentication, the single lead form and distribution, broker eligibility, and the lead assignment algorithm.
 
 Frontend repository: [lead-distribution-web](https://github.com/norbertoqjr/lead-distribution-web)
 
@@ -9,13 +9,15 @@ Frontend repository: [lead-distribution-web](https://github.com/norbertoqjr/lead
 | Concern | Choice |
 |---|---|
 | Runtime | Node.js 20+ |
-| Framework | Express |
+| Framework | NestJS (Express platform) |
 | Language | TypeScript |
 | Database | MySQL 8 |
 | ORM | Prisma |
-| Auth | JWT in an httpOnly cookie |
-| Validation | Zod on every request body |
+| Auth | Passport JWT in an httpOnly cookie |
+| Validation | `class-validator` DTOs via a global `ValidationPipe` |
 | Process manager | PM2 |
+
+Nest runs on Express by default (`@nestjs/platform-express`), so this satisfies the Express requirement while giving the codebase a module structure that keeps business logic out of the controllers.
 
 This service is **not publicly exposed** in production. It binds to `127.0.0.1` on a private port and is reached only by the frontend running on the same host.
 
@@ -28,8 +30,27 @@ npm install
 cp .env.example .env        # then fill in real values
 npm run db:migrate          # create tables
 npm run db:seed             # create the admin user
-npm run dev                 # http://localhost:8193
+npm run start:dev           # http://localhost:8193
 ```
+
+## Project structure
+
+```
+src/
+├── main.ts                     bootstrap, global pipes, cookie parser, CORS
+├── app.module.ts
+├── prisma/                     PrismaService and module
+├── auth/                       login, JWT strategy, guards
+├── users/                      admin accounts
+├── brokers/                    CRUD and per-broker lead views
+├── forms/                      the single form, singleton guard
+├── distributions/              the single distribution and broker settings
+├── leads/                      lead records, filtering, manual assignment
+├── distribution/               assignment engine — eligibility and deficit
+└── common/                     DTOs, filters, interceptors, decorators
+```
+
+Each feature is a Nest module with its own controller, service, and DTOs. Controllers stay thin: they validate input and delegate. The assignment algorithm lives in a plain, injectable service with no HTTP dependencies, so it is unit-testable in isolation.
 
 ## Environment variables
 
@@ -48,12 +69,14 @@ Copy `.env.example` to `.env` and set each value. `.env` is gitignored and must 
 | `ADMIN_PASSWORD` | Seeded admin password | set your own |
 | `TRUST_PROXY` | `true` when behind a proxy, so client IPs are read correctly | `false` |
 
+Configuration is read through `@nestjs/config` with a schema that fails startup if a required variable is missing.
+
 ## Database setup
 
 The MySQL server and database are provisioned already; this app supplies the schema.
 
 ```bash
-npm run db:migrate      # apply migrations (prisma migrate deploy)
+npm run db:migrate      # prisma migrate deploy
 npm run db:seed         # insert the admin user
 npm run db:studio       # optional: browse data
 ```
@@ -96,7 +119,7 @@ Singleton constraints on `forms` and `distributions` are enforced in the databas
 | `GET` | `/api/leads` | All leads, filterable by status |
 | `POST` | `/api/leads/:id/assign` | Manually assign an unsent lead |
 
-Every route validates its input server-side and returns structured errors.
+A global `JwtAuthGuard` protects everything; the two public routes opt out with a `@Public()` decorator. Every route validates its body through a DTO and returns structured errors from a global exception filter.
 
 ## Distribution logic
 
@@ -117,25 +140,28 @@ On submission:
 
 Lead statuses: `sent`, `unsent`, `duplicate`, `failed`.
 
+Steps 3 through 8 run inside a transaction, so two simultaneous submissions cannot both read the same `sentToday` counts and overshoot a broker's cap.
+
 ### Timezone and daily cap
 
 Availability and the daily counter both use the broker's timezone, not the server's. A broker set to `Asia/Manila`, 09:00–18:00, Mon–Fri only receives leads inside that window in Manila time, and its cap resets at Manila midnight.
 
 ### Client IP capture
 
-The visitor IP is read from the socket, or from the first entry of `X-Forwarded-For` when `TRUST_PROXY=true`. Storing the IP is mandatory.
+The visitor IP is read from the request socket, or from the first entry of `X-Forwarded-For` when `TRUST_PROXY=true`. Storing the IP is mandatory.
 
 ## Scripts
 
 | Command | Effect |
 |---|---|
-| `npm run dev` | Development server with reload |
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm start` | Run the compiled build |
+| `npm run start:dev` | Development server with watch mode |
+| `npm run build` | Compile to `dist/` |
+| `npm run start:prod` | Run the compiled build |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:seed` | Seed the admin user |
 | `npm run lint` | Lint |
-| `npm test` | Tests, including the deficit algorithm |
+| `npm test` | Unit tests, including the deficit algorithm |
+| `npm run test:e2e` | End-to-end tests |
 
 ## Deployment
 
@@ -148,7 +174,7 @@ cp .env.example .env && $EDITOR .env      # HOST=127.0.0.1, PORT=<private port>
 npm run build
 npm run db:migrate
 npm run db:seed
-pm2 start dist/server.js --name lds-api
+pm2 start dist/main.js --name lds-api
 pm2 save
 ```
 
