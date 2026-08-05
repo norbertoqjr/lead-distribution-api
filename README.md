@@ -12,7 +12,7 @@ Frontend repository: [lead-distribution-web](https://github.com/norbertoqjr/lead
 | Framework | NestJS (Express platform) |
 | Language | TypeScript |
 | Database | MySQL 8 |
-| ORM | Prisma |
+| ORM | TypeORM |
 | Auth | Passport JWT in an httpOnly cookie |
 | Validation | `class-validator` DTOs via a global `ValidationPipe` |
 | Process manager | PM2 |
@@ -39,7 +39,8 @@ npm run start:dev           # http://localhost:8193
 src/
 ├── main.ts                     bootstrap, global pipes, cookie parser, CORS
 ├── app.module.ts
-├── prisma/                     PrismaService and module
+├── database/                   data source, migrations, seed
+├── entities/                   TypeORM entities
 ├── auth/                       login, JWT strategy, guards
 ├── users/                      admin accounts
 ├── brokers/                    CRUD and per-broker lead views
@@ -76,9 +77,8 @@ Configuration is read through `@nestjs/config` with a schema that fails startup 
 The MySQL server and database are provisioned already; this app supplies the schema.
 
 ```bash
-npm run db:migrate      # prisma migrate deploy
+npm run db:migrate      # typeorm migration:run
 npm run db:seed         # insert the admin user
-npm run db:studio       # optional: browse data
 ```
 
 ### Schema
@@ -158,6 +158,8 @@ The visitor IP is read from the request socket, or from the first entry of `X-Fo
 | `npm run build` | Compile to `dist/` |
 | `npm run start:prod` | Run the compiled build |
 | `npm run db:migrate` | Apply migrations |
+| `npm run db:migrate:generate` | Generate a migration from entity changes |
+| `npm run db:migrate:revert` | Roll back the last migration |
 | `npm run db:seed` | Seed the admin user |
 | `npm run lint` | Lint |
 | `npm test` | Unit tests, including the deficit algorithm |
