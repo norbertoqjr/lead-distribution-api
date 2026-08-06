@@ -8,6 +8,14 @@ import { LoginDto } from './dto/login.dto';
 
 export type SessionUser = { id: number; email: string; name: string | null };
 
+/**
+ * A real bcrypt hash of a value no password will ever equal, at the same cost
+ * factor the seed uses. Compared against when the email is unknown so both
+ * paths take the same time. Generated once, offline; it is not a secret.
+ */
+const DECOY_HASH =
+  '$2a$12$.ysgZsqYymhnMNUNBBZhd.ncMtVccs2JyEku8dCSOtzzM6dyq/PmO';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -22,9 +30,14 @@ export class AuthService {
       select: ['id', 'email', 'name', 'passwordHash'],
     });
 
-    // Compare against a dummy hash when the user is missing so the response
-    // time does not reveal whether an address exists.
-    const hash = user?.passwordHash ?? '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv';
+    // Compare against a decoy when the user is missing, so response time does
+    // not reveal whether an address has an account.
+    //
+    // This must be a *valid* bcrypt hash. An malformed placeholder is rejected
+    // by the parser in microseconds instead of costing a real comparison,
+    // which reintroduces exactly the timing difference it is meant to hide
+    // (measured: 0.001ms against a broken hash, 310ms against a valid one).
+    const hash = user?.passwordHash ?? DECOY_HASH;
     const matches = await bcrypt.compare(dto.password, hash);
 
     if (!user || !matches) {
