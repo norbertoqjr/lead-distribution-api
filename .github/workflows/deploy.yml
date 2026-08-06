@@ -1,0 +1,115 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never let two deploys write dist/ at once. Queue rather than cancel: a
+# half-applied deploy is worse than a slow one.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    name: Deploy to VPS
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          # Key, not VPS_PASSWORD: CI access can then be revoked by removing a
+          # line from authorized_keys, without changing the account password.
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          envs: >-
+            API_PORT,MYSQL_USER,MYSQL_PASSWORD,MYSQL_PORT,MYSQL_DATABASE,
+            JWT_SECRET,ADMIN_EMAIL,ADMIN_PASSWORD,VPS_HOST,WEB_PORT
+          script: |
+            set -euo pipefail
+
+            # Actions runs a non-interactive shell, which skips .bashrc, so nvm
+            # has to be sourced explicitly or node is not on PATH.
+            export NVM_DIR="$HOME/.nvm"
+            . "$NVM_DIR/nvm.sh"
+
+            APP=~/apps/lds-api
+
+            if [ ! -d "$APP/.git" ]; then
+              mkdir -p ~/apps
+              git clone https://github.com/norbertoqjr/lead-distribution-api.git "$APP"
+            fi
+
+            cd "$APP"
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            # Composed here rather than stored, so the secrets mirror the
+            # credentials sheet one-for-one. MySQL is on this host, so the
+            # connection never leaves loopback.
+            cat > .env <<ENV
+            NODE_ENV=production
+            PORT=${API_PORT}
+            HOST=127.0.0.1
+            DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@127.0.0.1:${MYSQL_PORT}/${MYSQL_DATABASE}
+            JWT_SECRET=${JWT_SECRET}
+            JWT_EXPIRES_IN=7d
+            SESSION_COOKIE_NAME=lds_session
+            CORS_ORIGIN=http://${VPS_HOST}:${WEB_PORT}
+            ADMIN_EMAIL=${ADMIN_EMAIL}
+            ADMIN_PASSWORD=${ADMIN_PASSWORD}
+            TRUST_PROXY=false
+            ENV
+            chmod 600 .env
+
+            # Dev dependencies are required: db:migrate and db:seed run through
+            # ts-node and the TypeORM CLI. --omit=dev breaks both.
+            npm ci
+            npm run build
+            npm run db:migrate
+            npm run db:seed
+
+            pm2 restart lds-api --update-env \
+              || pm2 start dist/main.js --name lds-api
+            pm2 save
+
+            # Give Nest a moment to bind before probing.
+            sleep 3
+            curl -fsS "http://127.0.0.1:${API_PORT}/api/health"
+
+            # The private port must not be reachable from outside the host.
+            if command -v ss >/dev/null 2>&1; then
+              echo "--- listeners ---"
+              ss -tln | grep -E ":${API_PORT}" || true
+            fi
+        env:
+          API_PORT: ${{ secrets.API_PORT }}
+          WEB_PORT: ${{ secrets.WEB_PORT }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_PORT: ${{ secrets.MYSQL_PORT }}
+          MYSQL_DATABASE: ${{ secrets.MYSQL_DATABASE }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
