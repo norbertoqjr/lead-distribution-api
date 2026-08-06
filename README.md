@@ -65,6 +65,7 @@ Copy `.env.example` to `.env` and set each value. `.env` is gitignored and must 
 | `DATABASE_URL` | MySQL connection string | `mysql://user:pass@127.0.0.1:3306/dbname` |
 | `JWT_SECRET` | Signing secret, 32+ random bytes | generate with `openssl rand -hex 32` |
 | `JWT_EXPIRES_IN` | Session lifetime | `7d` |
+| `SESSION_COOKIE_NAME` | Cookie the session token is stored in. Must match the frontend | `lds_session` |
 | `CORS_ORIGIN` | Allowed frontend origin | `http://localhost:8192` |
 | `ADMIN_EMAIL` | Seeded admin account | `admin@example.com` |
 | `ADMIN_PASSWORD` | Seeded admin password | set your own |
@@ -110,14 +111,29 @@ Singleton constraints on `forms` and `distributions` are enforced in the databas
 | `POST` | `/api/auth/login` | Log in, set the session cookie |
 | `POST` | `/api/auth/logout` | Clear the session |
 | `GET` | `/api/auth/me` | Current admin |
-| `GET/POST/PATCH` | `/api/brokers` | List, create, update brokers |
-| `GET` | `/api/brokers/:id/leads` | Leads received by one broker |
+| `PATCH` | `/api/auth/me` | Update own display name or password. Email cannot be changed |
+| `GET/POST/PATCH/DELETE` | `/api/brokers` | List (paginated), create, update, delete brokers |
+| `GET` | `/api/brokers/:id/leads` | Leads received by one broker. Paginated |
 | `GET/POST` | `/api/forms` | Read or create the single form |
 | `GET/POST` | `/api/distributions` | Read or create the single distribution |
 | `PATCH` | `/api/distributions/:id/brokers` | Set percentages and active flags |
-| `GET` | `/api/distributions/:id/leads` | Full history through the distribution |
-| `GET` | `/api/leads` | All leads, filterable by status |
+| `GET` | `/api/distributions/:id/leads` | Full history through the distribution. Paginated |
+| `GET` | `/api/leads` | All leads, filterable by status. Paginated |
+| `GET` | `/api/leads/summary` | Counts per status, for the dashboard |
 | `POST` | `/api/leads/:id/assign` | Manually assign an unsent lead |
+
+### Pagination
+
+List endpoints accept `page` (default `1`) and `perPage` (default `20`, maximum
+`100`) and answer with an envelope rather than a bare array:
+
+```json
+{ "data": [], "total": 42, "page": 1, "perPage": 20, "totalPages": 3 }
+```
+
+`perPage` is capped so a single request cannot pull an entire table. Rows and
+total come from one `findAndCount`, so the count always matches the page just
+read.
 
 A global `JwtAuthGuard` protects everything; the two public routes opt out with a `@Public()` decorator. Every route validates its body through a DTO and returns structured errors from a global exception filter.
 
@@ -163,7 +179,6 @@ The visitor IP is read from the request socket, or from the first entry of `X-Fo
 | `npm run db:seed` | Seed the admin user |
 | `npm run lint` | Lint |
 | `npm test` | Unit tests, including the deficit algorithm |
-| `npm run test:e2e` | End-to-end tests |
 
 ## Deployment
 
@@ -196,6 +211,36 @@ pm2 monit
 ```
 
 `pm2 save` persists the process list so the API returns after a server reboot. Verify with `pm2 kill && pm2 resurrect`.
+
+## Accessing the deployed app
+
+This service is **not publicly reachable**, by design: it binds to `127.0.0.1`
+on the private port, so only processes on the same host can call it. The
+deployed application is reached through the frontend at
+`http://<host>:<public port>`, which proxies to this API internally.
+
+To check the API itself on the server:
+
+```bash
+ssh <user>@<host>
+curl http://127.0.0.1:<private port>/api/health   # {"status":"ok","database":"up"}
+```
+
+To reach it from your own machine without exposing it, tunnel over SSH:
+
+```bash
+ssh -L 8193:127.0.0.1:<private port> <user>@<host>
+# then http://localhost:8193/api/health locally
+```
+
+Confirm the binding is correct after deploying:
+
+```bash
+ss -tlnp | grep -E '<public port>|<private port>'
+```
+
+The public port should be listening on `0.0.0.0`; the private port must show
+`127.0.0.1`. If the private port shows `0.0.0.0`, `HOST` is wrong in `.env`.
 
 ## Testing notes
 

@@ -1,0 +1,113 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never let two deploys write dist/ at once. Queue rather than cancel: a
+# half-applied deploy is worse than a slow one.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    name: Deploy to VPS
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      # Configuration is NOT written from here. The .env file lives on the VPS,
+      # created once by hand, so the database password, JWT secret and admin
+      # login never leave the server. GitHub holds SSH access and nothing else.
+      #
+      # This is safe across redeploys because .env is gitignored and the script
+      # uses `git reset --hard`, which leaves untracked files alone. There is
+      # deliberately no `git clean` anywhere below.
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          # Key, not the account password: CI access can then be revoked by
+          # removing a line from authorized_keys.
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            # Actions opens a non-interactive shell, which skips .bashrc, so
+            # nvm has to be sourced explicitly or node is not on PATH.
+            export NVM_DIR="$HOME/.nvm"
+            . "$NVM_DIR/nvm.sh"
+
+            APP=~/apps/lds-api
+
+            if [ ! -d "$APP/.git" ]; then
+              echo "ERROR: $APP is not a git checkout." >&2
+              echo "Run the one-time bootstrap first — see docs/DEPLOYMENT.md" >&2
+              exit 1
+            fi
+
+            cd "$APP"
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            # Fail loudly on a missing or half-filled .env. Without it the API
+            # dies on config validation at boot and PM2 restart-loops, which
+            # reads as a mysterious outage rather than a missing file.
+            if [ ! -f .env ]; then
+              echo "ERROR: .env missing at $APP" >&2
+              echo "Create it once from .env.example — see docs/DEPLOYMENT.md" >&2
+              exit 1
+            fi
+
+            for key in PORT HOST DATABASE_URL JWT_SECRET ADMIN_EMAIL ADMIN_PASSWORD; do
+              grep -q "^${key}=" .env || {
+                echo "ERROR: $key missing from $APP/.env" >&2
+                exit 1
+              }
+            done
+
+            # Ports and settings for this shell: the health probe below reads
+            # $PORT from the server's own configuration rather than a secret.
+            set -a
+            . ./.env
+            set +a
+
+            # Dev dependencies are required: db:migrate and db:seed run through
+            # ts-node and the TypeORM CLI. --omit=dev breaks both.
+            npm ci
+            npm run build
+            npm run db:migrate
+            npm run db:seed
+
+            pm2 restart lds-api --update-env \
+              || pm2 start dist/main.js --name lds-api
+            pm2 save
+
+            # Give Nest a moment to bind before probing.
+            sleep 3
+            curl -fsS "http://127.0.0.1:${PORT}/api/health"
+
+            # The private port must not be reachable from outside the host.
+            if command -v ss >/dev/null 2>&1; then
+              echo "--- listeners ---"
+              ss -tln | grep -E ":${PORT}" || true
+            fi
