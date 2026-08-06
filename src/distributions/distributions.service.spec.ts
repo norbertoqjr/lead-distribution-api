@@ -22,7 +22,10 @@ describe('DistributionsService', () => {
     create: jest.fn((v: unknown) => v),
     delete: jest.fn(),
   };
-  const leads = { find: jest.fn() };
+  const leads = {
+    find: jest.fn(),
+    findAndCount: jest.fn().mockResolvedValue([[], 0]),
+  };
   const forms = { findOne: jest.fn() };
 
   beforeEach(async () => {
@@ -160,12 +163,12 @@ describe('DistributionsService', () => {
 
     it('returns every lead that passed through, not only the sent ones', async () => {
       distributions.findOne.mockResolvedValue({ id: 1 });
-      leads.find.mockResolvedValue([]);
+      leads.findAndCount.mockResolvedValue([[], 0]);
 
       await service.findLeads(1);
 
       // No status filter: the detail page must show duplicates and failures.
-      expect(leads.find).toHaveBeenCalledWith(
+      expect(leads.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({ where: { distributionId: 1 } }),
       );
     });

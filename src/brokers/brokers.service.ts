@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { Broker, Lead } from '../entities';
 import { CreateBrokerDto } from './dto/create-broker.dto';
 import { UpdateBrokerDto } from './dto/update-broker.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { paginate, resolvePaging, type Paginated } from '../common/paginated';
 
 @Injectable()
 export class BrokersService {
@@ -12,8 +14,16 @@ export class BrokersService {
     @InjectRepository(Lead) private readonly leads: Repository<Lead>,
   ) {}
 
-  findAll(): Promise<Broker[]> {
-    return this.brokers.find({ order: { name: 'ASC' } });
+  async findAll(query: PaginationQueryDto = {}): Promise<Paginated<Broker>> {
+    const { page, perPage, skip, take } = resolvePaging(query);
+
+    const [data, total] = await this.brokers.findAndCount({
+      order: { name: 'ASC' },
+      skip,
+      take,
+    });
+
+    return paginate(data, total, page, perPage);
   }
 
   async findOne(id: number): Promise<Broker> {
@@ -53,11 +63,21 @@ export class BrokersService {
   }
 
   /** Leads this broker received, newest first. */
-  async findLeads(id: number): Promise<Lead[]> {
+  async findLeads(
+    id: number,
+    query: PaginationQueryDto = {},
+  ): Promise<Paginated<Lead>> {
     await this.findOne(id);
-    return this.leads.find({
+
+    const { page, perPage, skip, take } = resolvePaging(query);
+
+    const [data, total] = await this.leads.findAndCount({
       where: { brokerId: id },
       order: { assignedAt: 'DESC', id: 'DESC' },
+      skip,
+      take,
     });
+
+    return paginate(data, total, page, perPage);
   }
 }

@@ -9,6 +9,7 @@ describe('LeadsService', () => {
 
   const leads = {
     find: jest.fn(),
+    findAndCount: jest.fn().mockResolvedValue([[], 0]),
     findOne: jest.fn(),
     save: jest.fn(),
     createQueryBuilder: jest.fn(),
@@ -31,23 +32,34 @@ describe('LeadsService', () => {
 
   describe('findAll', () => {
     it('returns everything when no status is given', async () => {
-      leads.find.mockResolvedValue([]);
+      leads.findAndCount.mockResolvedValue([[], 0]);
 
       await service.findAll({});
 
-      expect(leads.find).toHaveBeenCalledWith(
+      expect(leads.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({ where: {} }),
       );
     });
 
     it('filters by status when one is given', async () => {
-      leads.find.mockResolvedValue([]);
+      leads.findAndCount.mockResolvedValue([[], 0]);
 
       await service.findAll({ status: LeadStatus.UNSENT });
 
-      expect(leads.find).toHaveBeenCalledWith(
+      expect(leads.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({ where: { status: LeadStatus.UNSENT } }),
       );
+    });
+
+    it('applies the requested page as an offset', async () => {
+      leads.findAndCount.mockResolvedValue([[], 100]);
+
+      const result = await service.findAll({ page: 3, perPage: 10 });
+
+      expect(leads.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 10 }),
+      );
+      expect(result).toMatchObject({ total: 100, page: 3, totalPages: 10 });
     });
   });
 

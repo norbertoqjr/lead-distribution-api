@@ -10,6 +10,8 @@ import { Distribution, DistributionBroker, Lead } from '../entities';
 import { FormsService } from '../forms/forms.service';
 import { CreateDistributionDto } from './dto/create-distribution.dto';
 import { SetBrokersDto } from './dto/set-brokers.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { paginate, resolvePaging, type Paginated } from '../common/paginated';
 
 /** Exact copy required by the exam when a distribution precedes a form. */
 export const NO_FORM_MESSAGE = 'Oops, please create a form first.';
@@ -110,14 +112,23 @@ export class DistributionsService {
   }
 
   /** Every lead that passed through the distribution, whatever its status. */
-  async findLeads(id: number): Promise<Lead[]> {
+  async findLeads(
+    id: number,
+    query: PaginationQueryDto = {},
+  ): Promise<Paginated<Lead>> {
     const distribution = await this.distributions.findOne({ where: { id } });
     if (!distribution) throw new NotFoundException('Distribution not found');
 
-    return this.leads.find({
+    const { page, perPage, skip, take } = resolvePaging(query);
+
+    const [data, total] = await this.leads.findAndCount({
       where: { distributionId: id },
       relations: { broker: true },
       order: { createdAt: 'DESC', id: 'DESC' },
+      skip,
+      take,
     });
+
+    return paginate(data, total, page, perPage);
   }
 }

@@ -9,12 +9,16 @@ describe('BrokersService', () => {
 
   const brokers = {
     find: jest.fn(),
+    findAndCount: jest.fn().mockResolvedValue([[], 0]),
     findOne: jest.fn(),
     save: jest.fn((v: unknown) => Promise.resolve(v)),
     create: jest.fn((v: unknown) => v),
     delete: jest.fn(),
   };
-  const leads = { find: jest.fn() };
+  const leads = {
+    find: jest.fn(),
+    findAndCount: jest.fn().mockResolvedValue([[], 0]),
+  };
 
   const dto = {
     name: 'Broker A',
@@ -98,12 +102,13 @@ describe('BrokersService', () => {
 
   it('lists a broker leads newest first', async () => {
     brokers.findOne.mockResolvedValue({ id: 1 });
-    leads.find.mockResolvedValue([]);
+    leads.findAndCount.mockResolvedValue([[], 0]);
 
-    await service.findLeads(1);
+    const result = await service.findLeads(1);
 
-    expect(leads.find).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { brokerId: 1 } }),
+    expect(leads.findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { brokerId: 1 }, skip: 0, take: 20 }),
     );
+    expect(result).toMatchObject({ total: 0, page: 1, totalPages: 1 });
   });
 });

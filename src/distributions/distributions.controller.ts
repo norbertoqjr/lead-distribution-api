@@ -6,11 +6,14 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { DistributionsService } from './distributions.service';
 import { CreateDistributionDto } from './dto/create-distribution.dto';
 import { SetBrokersDto } from './dto/set-brokers.dto';
 import { Distribution, Lead } from '../entities';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import type { Paginated } from '../common/paginated';
 
 @Controller('distributions')
 export class DistributionsController {
@@ -35,7 +38,10 @@ export class DistributionsController {
   }
 
   @Get(':id/leads')
-  findLeads(@Param('id', ParseIntPipe) id: number): Promise<Lead[]> {
-    return this.distributions.findLeads(id);
+  findLeads(
+    @Param('id', ParseIntPipe) id: number,
+    @Query() query: PaginationQueryDto,
+  ): Promise<Paginated<Lead>> {
+    return this.distributions.findLeads(id, query);
   }
 }

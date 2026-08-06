@@ -11,13 +11,14 @@ import { LeadsService } from './leads.service';
 import { AssignLeadDto } from './dto/assign-lead.dto';
 import { QueryLeadsDto } from './dto/query-leads.dto';
 import { Lead, LeadStatus } from '../entities';
+import type { Paginated } from '../common/paginated';
 
 @Controller('leads')
 export class LeadsController {
   constructor(private readonly leads: LeadsService) {}
 
   @Get()
-  findAll(@Query() query: QueryLeadsDto): Promise<Lead[]> {
+  findAll(@Query() query: QueryLeadsDto): Promise<Paginated<Lead>> {
     return this.leads.findAll(query);
   }
 

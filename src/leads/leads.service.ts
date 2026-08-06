@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Broker, Lead, LeadStatus } from '../entities';
 import { QueryLeadsDto } from './dto/query-leads.dto';
+import { paginate, resolvePaging, type Paginated } from '../common/paginated';
 
 @Injectable()
 export class LeadsService {
@@ -15,12 +16,20 @@ export class LeadsService {
     @InjectRepository(Broker) private readonly brokers: Repository<Broker>,
   ) {}
 
-  findAll(query: QueryLeadsDto): Promise<Lead[]> {
-    return this.leads.find({
+  async findAll(query: QueryLeadsDto): Promise<Paginated<Lead>> {
+    const { page, perPage, skip, take } = resolvePaging(query);
+
+    // findAndCount runs the rows and the total in one call, so the count
+    // always matches the page that was just read.
+    const [data, total] = await this.leads.findAndCount({
       where: query.status ? { status: query.status } : {},
       relations: { broker: true },
       order: { createdAt: 'DESC', id: 'DESC' },
+      skip,
+      take,
     });
+
+    return paginate(data, total, page, perPage);
   }
 
   async findOne(id: number): Promise<Lead> {
