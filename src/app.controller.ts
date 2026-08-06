@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { Public } from './common/decorators/public.decorator';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
@@ -17,6 +18,7 @@ type Welcome = {
 export class AppController {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
+  @Public()
   @Get()
   async welcome(): Promise<Welcome> {
     let database = 'down';

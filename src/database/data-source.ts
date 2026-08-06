@@ -21,7 +21,9 @@ export const AppDataSource = new DataSource({
   // database cannot be silently restructured on boot.
   synchronize: false,
   timezone: 'Z',
-  logging: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+  logging:
+    process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
 });
 
-export default AppDataSource;
+// Single export only — the TypeORM CLI rejects a file exporting more than one
+// DataSource, and a default alias counts as a second.
