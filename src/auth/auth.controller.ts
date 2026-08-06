@@ -1,8 +1,17 @@
-import { Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Patch,
+  Post,
+  Res,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { AuthService, SessionUser } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorator';
 
@@ -48,5 +57,14 @@ export class AuthController {
   @Get('me')
   async me(@CurrentUser() user: AuthUser): Promise<SessionUser | null> {
     return this.auth.findById(user.id);
+  }
+
+  @Patch('me')
+  async updateMe(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateProfileDto,
+  ): Promise<SessionUser> {
+    // Always the caller's own id, never one from the body.
+    return this.auth.updateProfile(user.id, dto);
   }
 }

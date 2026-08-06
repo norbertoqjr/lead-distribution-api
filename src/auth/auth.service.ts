@@ -1,10 +1,15 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../entities';
 import { LoginDto } from './dto/login.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 export type SessionUser = { id: number; email: string; name: string | null };
 
@@ -49,6 +54,45 @@ export class AuthService {
 
   sign(user: SessionUser): string {
     return this.jwt.sign({ sub: user.id, email: user.email });
+  }
+
+  /**
+   * Updates the signed-in admin's own profile. Email is not accepted: it is
+   * the login identifier, so changing it here risks a lockout.
+   */
+  async updateProfile(
+    id: number,
+    dto: UpdateProfileDto,
+  ): Promise<SessionUser> {
+    const user = await this.users.findOne({
+      where: { id },
+      select: ['id', 'email', 'name', 'passwordHash'],
+    });
+
+    if (!user) throw new NotFoundException('Account not found');
+
+    if (dto.newPassword) {
+      // Re-authenticate before changing the password, so a hijacked session
+      // cannot lock the real owner out of their own account.
+      const matches = await bcrypt.compare(
+        dto.currentPassword ?? '',
+        user.passwordHash,
+      );
+
+      if (!matches) {
+        throw new UnauthorizedException('Your current password is incorrect');
+      }
+
+      user.passwordHash = await bcrypt.hash(dto.newPassword, 12);
+    }
+
+    if (dto.name !== undefined) {
+      user.name = dto.name === '' ? null : dto.name;
+    }
+
+    await this.users.save(user);
+
+    return { id: user.id, email: user.email, name: user.name };
   }
 
   async findById(id: number): Promise<SessionUser | null> {
