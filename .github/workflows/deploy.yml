@@ -91,9 +91,11 @@ jobs:
             . ./.env
             set +a
 
-            # Dev dependencies are required: db:migrate and db:seed run through
-            # ts-node and the TypeORM CLI. --omit=dev breaks both.
-            npm ci
+            # Dev dependencies are required: nest build, db:migrate and db:seed
+            # run through the Nest CLI, ts-node and the TypeORM CLI. --include=dev
+            # is not redundant — sourcing .env above exported NODE_ENV=production,
+            # which makes npm omit devDependencies on its own.
+            npm ci --include=dev
             npm run build
             npm run db:migrate
             npm run db:seed
