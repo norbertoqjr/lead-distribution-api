@@ -52,6 +52,17 @@ export class AssignmentService {
         status: LeadStatus.UNSENT,
       });
 
+      // Resolved before the duplicate check purely so the link can be stored.
+      // The decision order still follows the specification: duplicate first,
+      // then distribution. But a duplicate has to carry its distributionId,
+      // otherwise it never appears on the distribution detail page, which is
+      // required to show duplicates alongside sent, unsent and failed leads.
+      const distribution = await manager.getRepository(Distribution).findOne({
+        where: { formId: form.id },
+      });
+
+      if (distribution) lead.distributionId = distribution.id;
+
       const alreadyAssigned = await leads.findOne({
         where: {
           email: input.email,
@@ -66,16 +77,10 @@ export class AssignmentService {
         return leads.save(lead);
       }
 
-      const distribution = await manager.getRepository(Distribution).findOne({
-        where: { formId: form.id },
-      });
-
       if (!distribution || !distribution.isActive) {
         lead.note = 'No active distribution';
         return leads.save(lead);
       }
-
-      lead.distributionId = distribution.id;
 
       try {
         const brokerId = await this.pickBroker(manager, distribution.id);
