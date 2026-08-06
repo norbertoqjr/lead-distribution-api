@@ -26,6 +26,16 @@ export class AuthController {
     return this.config.get<string>('SESSION_COOKIE_NAME') ?? 'lds_session';
   }
 
+  /**
+   * A Secure cookie is discarded by the browser over plain HTTP, which reads as
+   * a login that succeeds and then bounces straight back to the sign-in page.
+   * NODE_ENV cannot answer this — production here is served over http on a bare
+   * IP — so the public origin's own scheme decides.
+   */
+  private get cookieSecure(): boolean {
+    return (this.config.get<string>('CORS_ORIGIN') ?? '').startsWith('https://');
+  }
+
   @Public()
   @Post('login')
   @HttpCode(200)
@@ -39,7 +49,7 @@ export class AuthController {
       // httpOnly keeps the token out of reach of client JavaScript.
       httpOnly: true,
       sameSite: 'lax',
-      secure: this.config.get<string>('NODE_ENV') === 'production',
+      secure: this.cookieSecure,
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
     });
