@@ -15,6 +15,8 @@
     "db:migrate:revert": "npm run typeorm -- migration:revert",
     "db:migrate:generate": "npm run typeorm -- migration:generate src/database/migrations/Migration",
     "db:seed": "ts-node -r tsconfig-paths/register src/database/seed.ts",
+    "db:reset": "ts-node -r tsconfig-paths/register src/database/assert-resettable.ts && npm run db:drop && npm run db:migrate && npm run db:seed",
+    "reset": "npm run db:reset",
     "db:drop": "npm run typeorm -- schema:drop",
     "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix"
   },
