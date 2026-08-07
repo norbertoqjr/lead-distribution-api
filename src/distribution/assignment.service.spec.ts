@@ -17,12 +17,14 @@ describe('AssignmentService', () => {
     count: jest.fn().mockResolvedValue(0),
   };
   const distributionRepo = { findOne: jest.fn() };
+  const brokerRepo = { findOne: jest.fn() };
   const memberRepo = { find: jest.fn().mockResolvedValue([]) };
 
   const manager = {
     getRepository: (entity: { name: string }) => {
       if (entity.name === 'Lead') return leadRepo;
       if (entity.name === 'Distribution') return distributionRepo;
+      if (entity.name === 'Broker') return brokerRepo;
       return memberRepo;
     },
   };
@@ -68,6 +70,28 @@ describe('AssignmentService', () => {
     expect(lead.status).toBe(LeadStatus.DUPLICATE);
     expect(lead.distributionId).toBe(7);
     expect(lead.brokerId).toBeUndefined();
+  });
+
+  it('names the broker a duplicate is already assigned to', async () => {
+    // The note is read by a person deciding what to do about the duplicate.
+    // "broker #3" makes them go and look the id up.
+    distributionRepo.findOne.mockResolvedValue({ id: 7, isActive: true });
+    leadRepo.findOne.mockResolvedValue({ id: 99, brokerId: 3 });
+    brokerRepo.findOne.mockResolvedValue({ id: 3, name: 'Broker A' });
+
+    const lead = await service.submit(form, input);
+
+    expect(lead.note).toBe('Already assigned to Broker A');
+  });
+
+  it('falls back to the id when that broker no longer exists', async () => {
+    distributionRepo.findOne.mockResolvedValue({ id: 7, isActive: true });
+    leadRepo.findOne.mockResolvedValue({ id: 99, brokerId: 3 });
+    brokerRepo.findOne.mockResolvedValue(null);
+
+    const lead = await service.submit(form, input);
+
+    expect(lead.note).toBe('Already assigned to broker #3');
   });
 
   it('stores the visitor IP on every path', async () => {

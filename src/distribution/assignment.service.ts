@@ -72,8 +72,16 @@ export class AssignmentService {
       });
 
       if (alreadyAssigned) {
+        // The note is read by a person deciding what to do about the duplicate,
+        // so it names the broker. The id is the fallback for a broker deleted
+        // since the original lead was assigned.
+        const ownerId = alreadyAssigned.brokerId;
+        const owner = ownerId
+          ? await manager.getRepository(Broker).findOne({ where: { id: ownerId } })
+          : null;
+
         lead.status = LeadStatus.DUPLICATE;
-        lead.note = `Already assigned to broker #${alreadyAssigned.brokerId}`;
+        lead.note = `Already assigned to ${owner?.name ?? `broker #${ownerId}`}`;
         return leads.save(lead);
       }
 
