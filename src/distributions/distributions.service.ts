@@ -12,6 +12,7 @@ import { CreateDistributionDto } from './dto/create-distribution.dto';
 import { SetBrokersDto } from './dto/set-brokers.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { paginate, resolvePaging, type Paginated } from '../common/paginated';
+import { capActiveBrokers } from './share-cap';
 
 /** Exact copy required by the exam when a distribution precedes a form. */
 export const NO_FORM_MESSAGE = 'Oops, please create a form first.';
@@ -80,7 +81,11 @@ export class DistributionsService {
     const distribution = await this.distributions.findOne({ where: { id } });
     if (!distribution) throw new NotFoundException('Distribution not found');
 
-    const keepIds = dto.brokers.map((entry) => entry.brokerId);
+    // Enforced here rather than in the DTO because the rule rewrites the
+    // payload instead of rejecting it: brokers whose share no longer fits under
+    // 100% are deactivated, so a direct API call cannot over-allocate either.
+    const brokers = capActiveBrokers(dto.brokers);
+    const keepIds = brokers.map((entry) => entry.brokerId);
 
     // Drop members no longer selected, then upsert the rest.
     const current = await this.members.find({ where: { distributionId: id } });
@@ -89,12 +94,12 @@ export class DistributionsService {
       await this.members.delete({ id: In(removed.map((m) => m.id)) });
     }
 
-    for (const entry of dto.brokers) {
+    for (const entry of brokers) {
       const existing = current.find((m) => m.brokerId === entry.brokerId);
 
       if (existing) {
         existing.percentage = entry.percentage;
-        existing.isActive = entry.isActive ?? existing.isActive;
+        existing.isActive = entry.isActive;
         await this.members.save(existing);
       } else {
         await this.members.save(
@@ -102,7 +107,7 @@ export class DistributionsService {
             distributionId: id,
             brokerId: entry.brokerId,
             percentage: entry.percentage,
-            isActive: entry.isActive ?? true,
+            isActive: entry.isActive,
           }),
         );
       }

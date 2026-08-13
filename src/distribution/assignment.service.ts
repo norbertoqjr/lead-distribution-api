@@ -77,7 +77,9 @@ export class AssignmentService {
         // since the original lead was assigned.
         const ownerId = alreadyAssigned.brokerId;
         const owner = ownerId
-          ? await manager.getRepository(Broker).findOne({ where: { id: ownerId } })
+          ? await manager
+              .getRepository(Broker)
+              .findOne({ where: { id: ownerId } })
           : null;
 
         lead.status = LeadStatus.DUPLICATE;
