@@ -150,6 +150,85 @@ describe('DistributionsService', () => {
 
       expect(members.delete).toHaveBeenCalled();
     });
+
+    it('deactivates the lowest shares when the payload totals over 100', async () => {
+      distributions.findOne.mockResolvedValue({ id: 1 });
+      members.find.mockResolvedValue([]);
+
+      // Sent straight to the API, bypassing the form's own capping.
+      await service.setBrokers(1, {
+        brokers: [
+          { brokerId: 1, percentage: 50, isActive: true },
+          { brokerId: 2, percentage: 40, isActive: true },
+          { brokerId: 3, percentage: 30, isActive: true },
+        ],
+      });
+
+      expect(members.save).toHaveBeenCalledWith(
+        expect.objectContaining({ brokerId: 1, isActive: true }),
+      );
+      expect(members.save).toHaveBeenCalledWith(
+        expect.objectContaining({ brokerId: 2, isActive: true }),
+      );
+      // 50 + 40 + 30 overflows, so the smallest share loses its slot.
+      expect(members.save).toHaveBeenCalledWith(
+        expect.objectContaining({ brokerId: 3, percentage: 30, isActive: false }),
+      );
+    });
+
+    it('keeps a capped broker as a member rather than deleting it', async () => {
+      distributions.findOne.mockResolvedValue({ id: 1 });
+      members.find.mockResolvedValue([
+        { id: 10, brokerId: 1, percentage: 0, isActive: true },
+        { id: 11, brokerId: 2, percentage: 0, isActive: true },
+      ]);
+
+      await service.setBrokers(1, {
+        brokers: [
+          { brokerId: 1, percentage: 90, isActive: true },
+          { brokerId: 2, percentage: 90, isActive: true },
+        ],
+      });
+
+      // The row survives with its percentage intact, so the admin can restore
+      // it by lowering the other broker.
+      expect(members.delete).not.toHaveBeenCalled();
+      expect(members.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 11, percentage: 90, isActive: false }),
+      );
+    });
+
+    it('leaves a payload totalling 100 or less alone', async () => {
+      distributions.findOne.mockResolvedValue({ id: 1 });
+      members.find.mockResolvedValue([]);
+
+      await service.setBrokers(1, {
+        brokers: [
+          { brokerId: 1, percentage: 60, isActive: true },
+          { brokerId: 2, percentage: 40, isActive: true },
+        ],
+      });
+
+      expect(members.save).toHaveBeenCalledWith(
+        expect.objectContaining({ brokerId: 2, isActive: true }),
+      );
+    });
+
+    it('does not count an inactive broker towards the limit', async () => {
+      distributions.findOne.mockResolvedValue({ id: 1 });
+      members.find.mockResolvedValue([]);
+
+      await service.setBrokers(1, {
+        brokers: [
+          { brokerId: 1, percentage: 80, isActive: false },
+          { brokerId: 2, percentage: 100, isActive: true },
+        ],
+      });
+
+      expect(members.save).toHaveBeenCalledWith(
+        expect.objectContaining({ brokerId: 2, isActive: true }),
+      );
+    });
   });
 
   describe('findLeads', () => {
