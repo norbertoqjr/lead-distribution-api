@@ -33,8 +33,9 @@ describe('capActiveBrokers', () => {
     expect(activeTotal(capped)).toBe(90);
   });
 
-  it('still admits a later broker that fits in the leftover room', () => {
-    // 60 + 30 leaves 10: the 25 is dropped but the 10 fills the gap exactly.
+  it('cuts from the bottom rather than refilling the leftover room', () => {
+    // 60 + 30 leaves 10, and the 10 would fit exactly — but the 25 above it
+    // already overflowed, so everything below the cut goes off with it.
     const capped = capActiveBrokers([
       row(1, 60),
       row(2, 30),
@@ -46,17 +47,17 @@ describe('capActiveBrokers', () => {
       true,
       true,
       false,
-      true,
+      false,
     ]);
-    expect(activeTotal(capped)).toBe(100);
+    expect(activeTotal(capped)).toBe(90);
   });
 
-  it('keeps a smaller share that still fits after a bigger one is dropped', () => {
-    // 70 + 40 overflows, but 5 fits in the remaining 30.
+  it('drops a smaller share that would have fit, once a bigger one overflowed', () => {
+    // 5 fits in the 30 left over, but it sits below the 40 that overflowed.
     const capped = capActiveBrokers([row(1, 70), row(2, 40), row(3, 5)]);
 
-    expect(capped.map((entry) => entry.isActive)).toEqual([true, false, true]);
-    expect(activeTotal(capped)).toBe(75);
+    expect(capped.map((entry) => entry.isActive)).toEqual([true, false, false]);
+    expect(activeTotal(capped)).toBe(70);
   });
 
   it('breaks ties on the lower broker id', () => {

@@ -22,11 +22,15 @@ const LIMIT_CENTS = 100_00;
 /**
  * Deactivates the brokers whose share would push the active total past 100%.
  *
- * Rows are ranked by share, highest first, and accepted while they still fit
- * under the limit; the ones that no longer fit — the smallest shares — are
- * flipped to `isActive: false` and so stop receiving leads. Rows that were
- * already inactive are left alone, and every row keeps its entered percentage
- * so a deactivated broker can be brought back by lowering someone else.
+ * Rows are ranked by share, highest first, and accepted until one no longer
+ * fits under the limit. That broker and every smaller one below it are flipped
+ * to `isActive: false` and so stop receiving leads — the cut runs from the
+ * bottom of the ranking up, rather than skipping the offender and refilling
+ * with whatever happens to fit in the gap.
+ *
+ * Rows that were already inactive are left alone, and every row keeps its
+ * entered percentage so a deactivated broker can be brought back by lowering
+ * someone else.
  *
  * The returned array preserves the input order; only the flags change.
  */
@@ -48,14 +52,18 @@ export function capActiveBrokers<T extends ShareRow>(
     });
 
   let running = 0;
+  let overflowed = false;
 
   for (const row of ranked) {
     const cents = toCents(row.percentage);
 
-    if (running + cents <= LIMIT_CENTS) {
-      running += cents;
-    } else {
+    // Once one broker overflows, everything ranked below it goes too: the
+    // smallest shares are the ones that lose their slot.
+    if (overflowed || running + cents > LIMIT_CENTS) {
+      overflowed = true;
       row.isActive = false;
+    } else {
+      running += cents;
     }
   }
 
